@@ -221,6 +221,26 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
 .lbb-btn.accent-btn{color:var(--accent);}
 .lbb-btn.active-mode{background:var(--accent);color:#fff;border-radius:20px;}
 
+
+/* ── DATE PICKER MODAL ── */
+#date-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;display:none;align-items:center;justify-content:center;}
+#date-modal-overlay.show{display:flex;}
+.date-modal{background:var(--paper);border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,0.2);padding:24px 22px 20px;width:88%;max-width:320px;display:flex;flex-direction:column;gap:14px;}
+.date-modal-title{font-family:var(--font-hand);font-size:22px;color:var(--accent);text-align:center;}
+.date-field{display:flex;flex-direction:column;gap:5px;}
+.date-field label{font-size:12px;color:var(--muted);font-weight:500;}
+.date-field input{height:44px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font-size:16px;font-family:var(--font-ui);color:var(--ink);background:var(--bg);outline:none;width:100%;}
+.date-field input:focus{border-color:var(--accent);}
+.date-modal-row{display:flex;gap:10px;}
+.date-modal-row .date-field{flex:1;}
+.date-modal-btns{display:flex;gap:8px;margin-top:4px;}
+.dm-btn{flex:1;padding:13px;border-radius:14px;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:var(--font-ui);}
+.dm-btn.confirm{background:var(--accent);color:#fff;}
+.dm-btn.confirm:active{background:#a8662e;}
+.dm-btn.cancel{background:var(--bg);color:var(--muted);border:1.5px solid var(--line);}
+.dm-btn.today{background:var(--bg);color:var(--accent);border:1.5px solid var(--accent);font-size:12px;}
+.date-badge.custom-date{background:#fff3e6;border-color:var(--accent);color:var(--accent);font-weight:500;}
+
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(44,36,22,0.9);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;opacity:0;transition:all 0.25s;pointer-events:none;z-index:9999;white-space:nowrap;font-family:var(--font-ui);}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
@@ -322,7 +342,7 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
 <div class="screen" id="screen-write">
   <div class="topbar">
     <div class="logo" id="write-logo">✍ 내 일기</div>
-    <div class="date-badge" id="today-date"></div>
+    <button class="date-badge" id="today-date" onclick="openDatePicker()" title="날짜/시간 변경" style="cursor:pointer;border:none;"></button>
     <button class="icon-btn" id="weather-btn" onclick="cycleWeather()" title="날씨">☀️</button>
     <button class="icon-btn" onclick="lockApp()" title="잠금">
       <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="12" height="9" rx="2"/><path d="M8 10V7a3 3 0 016 0v3"/></svg>
@@ -474,6 +494,28 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
   </div>
 </div>
 
+<!-- ── DATE PICKER MODAL ── -->
+<div id="date-modal-overlay" onclick="closeDatePickerIfBg(event)">
+  <div class="date-modal">
+    <div class="date-modal-title">📅 날짜 · 시간 선택</div>
+    <div class="date-field">
+      <label>날짜</label>
+      <input type="date" id="dp-date">
+    </div>
+    <div class="date-modal-row">
+      <div class="date-field">
+        <label>시간</label>
+        <input type="time" id="dp-time">
+      </div>
+    </div>
+    <div class="date-modal-btns">
+      <button class="dm-btn today" onclick="setTodayDate()">오늘로</button>
+      <button class="dm-btn cancel" onclick="closeDatePicker()">취소</button>
+      <button class="dm-btn confirm" onclick="confirmDatePicker()">확인</button>
+    </div>
+  </div>
+</div>
+
 <div id="print-area"></div>
 <div id="toast"></div>
 <input type="file" id="file-input" accept="image/*" multiple onchange="handleFiles(event)" style="display:none">
@@ -489,17 +531,28 @@ let pinBuf='',setupBuf='',setupStep=0,setupFirst='';
 let currentFont="'Nanum Pen Script',cursive";
 let driveResults=[];
 let driveEditEntry=null;
+let selectedDate=null; // {date:'2026-04-24', time:'14:30'} 또는 null=오늘
 
 function p2(n){return String(n).padStart(2,'0');}
 
 // ── INIT ──
 try{const s=localStorage.getItem('diary_entries');if(s)entries=JSON.parse(s);}catch(e){}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
-(()=>{
-  const d=new Date(),dy=['일','월','화','수','목','금','토'];
-  document.getElementById('today-date').textContent=
-    `${d.getFullYear()}.${p2(d.getMonth()+1)}.${p2(d.getDate())} (${dy[d.getDay()]})`;
-})();
+(()=>{updateDateBadge();})();
+function updateDateBadge(){
+  const dy=['일','월','화','수','목','금','토'];
+  const badge=document.getElementById('today-date');
+  if(selectedDate){
+    const [y,mo,da]=selectedDate.date.split('-');
+    const dt=new Date(+y,+mo-1,+da);
+    badge.textContent=`${selectedDate.date} (${dy[dt.getDay()]}) ${selectedDate.time}`;
+    badge.classList.add('custom-date');
+  } else {
+    const d=new Date();
+    badge.textContent=`${d.getFullYear()}.${p2(d.getMonth()+1)}.${p2(d.getDate())} (${dy[d.getDay()]})`;
+    badge.classList.remove('custom-date');
+  }
+}
 function initLock(){
   if(!hasPw()){showScreen('screen-write');return;}
   showScreen('screen-lock');
@@ -716,10 +769,11 @@ function saveEntry(){
     }
     cancelEdit();
   } else {
-    const ds=`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
-    const fn=`일기_${ds}_${p2(d.getHours())}${p2(d.getMinutes())}.html`;
+    const ds=selectedDate?selectedDate.date:`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+    const entryTime=selectedDate?selectedDate.time:`${d.getHours()}:${p2(d.getMinutes())}`;
+    const fn=`일기_${ds}_${entryTime.replace(':','')}.html`;
     const full=buildHTML(ds,html,mood||'—',weathers[wIdx],tags,currentFont);
-    entries.unshift({id:Date.now(),date:ds,time:`${d.getHours()}:${p2(d.getMinutes())}`,mood:mood||'—',weather:weathers[wIdx],tags,preview:text.slice(0,60),fn,html:full,font:currentFont});
+    entries.unshift({id:Date.now(),date:ds,time:entryTime,mood:mood||'—',weather:weathers[wIdx],tags,preview:text.slice(0,60),fn,html:full,font:currentFont});
     saveLS();dlBlob(full,fn);toast(`💾 ${fn} 저장 완료!`);
   }
 }
@@ -739,6 +793,8 @@ function cancelEdit(){
   mood='';wIdx=0;document.getElementById('weather-btn').textContent=weathers[0];
   document.getElementById('wc').textContent='0 글자';
   driveEditEntry=null;
+  selectedDate=null;
+  updateDateBadge();
 }
 function loadEntryToEdit(id){
   const e=entries.find(x=>x.id===id);if(!e)return;
@@ -1066,6 +1122,44 @@ function makeCard(e,fromDrive,kw){
     openView(e.id,fromDrive);
   });
   return card;
+}
+
+// ── DATE PICKER ──
+function openDatePicker(){
+  const overlay=document.getElementById('date-modal-overlay');
+  const d=selectedDate?new Date(selectedDate.date+'T'+selectedDate.time):new Date();
+  document.getElementById('dp-date').value=
+    `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  document.getElementById('dp-time').value=
+    `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  overlay.classList.add('show');
+  // 최대 날짜는 오늘
+  document.getElementById('dp-date').max=
+    `${new Date().getFullYear()}-${p2(new Date().getMonth()+1)}-${p2(new Date().getDate())}`;
+}
+function closeDatePicker(){document.getElementById('date-modal-overlay').classList.remove('show');}
+function closeDatePickerIfBg(e){if(e.target===document.getElementById('date-modal-overlay'))closeDatePicker();}
+function setTodayDate(){
+  const d=new Date();
+  document.getElementById('dp-date').value=`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  document.getElementById('dp-time').value=`${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+function confirmDatePicker(){
+  const dateVal=document.getElementById('dp-date').value;
+  const timeVal=document.getElementById('dp-time').value;
+  if(!dateVal){toast('날짜를 선택해 주세요');return;}
+  const today=new Date();
+  const todayStr=`${today.getFullYear()}-${p2(today.getMonth()+1)}-${p2(today.getDate())}`;
+  const todayTime=`${p2(today.getHours())}:${p2(today.getMinutes())}`;
+  if(dateVal===todayStr&&(timeVal===todayTime||!timeVal)){
+    selectedDate=null; // 오늘이면 null
+  } else {
+    selectedDate={date:dateVal,time:timeVal||'00:00'};
+  }
+  updateDateBadge();
+  closeDatePicker();
+  if(selectedDate)toast(`📅 ${selectedDate.date} ${selectedDate.time} 로 설정됐어요`);
+  else toast('📅 오늘 날짜로 돌아왔어요');
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2800);}
