@@ -488,6 +488,7 @@ let viewingId=null,viewingFromDrive=false;
 let pinBuf='',setupBuf='',setupStep=0,setupFirst='';
 let currentFont="'Nanum Pen Script',cursive";
 let driveResults=[];
+let driveEditEntry=null;
 
 function p2(n){return String(n).padStart(2,'0');}
 
@@ -690,6 +691,20 @@ function saveEntry(){
   if(!text&&!html.includes('<img')){toast('내용을 먼저 입력해 주세요 ✏️');return;}
   const d=new Date();
   const tags=Array.from(document.querySelectorAll('.tag-chip.active')).map(t=>t.textContent);
+  // ── 드라이브 파일 수정 저장 ──
+  if(driveEditEntry){
+    const old=driveEditEntry;
+    const m=mood||old.mood,w=weathers[wIdx],t=tags.length?tags:old.tags;
+    const full=buildHTML(old.date,html,m,w,t,currentFont);
+    const updatedEntry={...old,mood:m,weather:w,tags:t,preview:text.slice(0,60),html:full,
+      editedAt:`${p2(d.getHours())}:${p2(d.getMinutes())}`,font:currentFont};
+    const didx=driveResults.findIndex(e=>e.id===old.id);
+    if(didx>-1)driveResults[didx]=updatedEntry;
+    saveToDrive(old,full);
+    dlBlob(full,old.fn||`일기_${old.date}.html`);
+    cancelEdit();return;
+  }
+  // ── 로컬 파일 수정 저장 ──
   if(editingId!==null){
     const idx=entries.findIndex(e=>e.id===editingId);
     if(idx>-1){
@@ -723,6 +738,7 @@ function cancelEdit(){
   document.querySelectorAll('.tag-chip').forEach(t=>t.classList.remove('active'));
   mood='';wIdx=0;document.getElementById('weather-btn').textContent=weathers[0];
   document.getElementById('wc').textContent='0 글자';
+  driveEditEntry=null;
 }
 function loadEntryToEdit(id){
   const e=entries.find(x=>x.id===id);if(!e)return;
@@ -746,7 +762,7 @@ function openView(id,fromDrive){
   const e=src.find(x=>x.id===id);if(!e)return;
   viewingId=id;viewingFromDrive=!!fromDrive;
   document.getElementById('view-title').textContent=`📖 ${e.date}`;
-  document.getElementById('view-edit-btn').style.display=fromDrive?'none':'flex';
+  document.getElementById('view-edit-btn').style.display='flex'; // 드라이브도 수정 가능
   const kw=searchKw.toLowerCase();
   const tagHtml=e.tags.map(t=>`<span class="view-meta-tag">${t}</span>`).join('');
   const driveBadge=fromDrive?`<span class="view-badge">☁️ 드라이브</span>`:'';
@@ -768,7 +784,14 @@ function highlightText(node,kw){
     if(idx>-1){const span=document.createElement('span');span.innerHTML=node.textContent.slice(0,idx)+`<mark class="vbb-search-hl">${node.textContent.slice(idx,idx+kw.length)}</mark>`+node.textContent.slice(idx+kw.length);node.parentNode.replaceChild(span,node);}
   } else if(node.nodeType===1&&!['SCRIPT','STYLE','IMG'].includes(node.tagName)){Array.from(node.childNodes).forEach(c=>highlightText(c,kw));}
 }
-function viewEdit(){if(viewingFromDrive){toast('드라이브 일기는 수정할 수 없어요');return;}loadEntryToEdit(viewingId);showScreen('screen-write');toast('불러왔어요! 수정 후 저장하세요 ✏️');}
+function viewEdit(){
+  // 드라이브 파일도 수정 가능
+  const src=viewingFromDrive?driveResults:entries;
+  const e=src.find(x=>x.id===viewingId);if(!e)return;
+  loadEntryForEdit(e, viewingFromDrive);
+  showScreen('screen-write');
+  toast('불러왔어요! 수정 후 저장하세요 ✏️');
+}
 function viewDownload(){
   const src=viewingFromDrive?driveResults:entries;
   const e=src.find(x=>x.id===viewingId);if(!e)return;
@@ -776,7 +799,33 @@ function viewDownload(){
 }
 function viewPrint(){if(viewingId)printEntries([viewingId],viewingFromDrive?driveResults:null);}
 
-// ── GOOGLE DRIVE SEARCH ──
+// 로컬/드라이브 공통 에디터 로드
+function loadEntryForEdit(e, fromDrive){
+  const parser=new DOMParser();const doc=parser.parseFromString(e.html,'text/html');
+  const metaEl=doc.querySelector('.meta');if(metaEl)metaEl.remove();
+  document.getElementById('editor').innerHTML=doc.body.innerHTML.trim();
+  onInput();
+  mood=e.mood||'';
+  document.querySelectorAll('.mood-btn').forEach(b=>b.classList.toggle('active',b.dataset.mood===e.mood));
+  const wi=weathers.indexOf(e.weather);if(wi>-1){wIdx=wi;document.getElementById('weather-btn').textContent=weathers[wIdx];}
+  document.querySelectorAll('.tag-chip').forEach(chip=>chip.classList.toggle('active',(e.tags||[]).includes(chip.textContent)));
+  if(e.font){currentFont=e.font;document.getElementById('editor').style.fontFamily=currentFont;
+    document.querySelectorAll('.font-chip').forEach(c=>c.classList.toggle('active',c.dataset.font===e.font));}
+  // 드라이브 파일이면 driveEditId 세팅
+  if(fromDrive){
+    editingId=null;
+    driveEditEntry=e; // 저장 시 드라이브에 업데이트
+    document.getElementById('edit-banner').classList.add('show');
+    document.getElementById('write-logo').textContent='☁️ 드라이브 수정 중';
+  } else {
+    driveEditEntry=null;
+    editingId=e.id;
+    document.getElementById('edit-banner').classList.add('show');
+    document.getElementById('write-logo').textContent='✏️ 수정 중';
+  }
+}
+
+// ── GOOGLE DRIVE SEARCH (journey 폴더) ──
 async function searchGoogleDrive(kw){
   document.getElementById('gdrive-search-status').textContent='☁️ 드라이브 검색 중...';
   driveResults=[];
@@ -786,11 +835,17 @@ async function searchGoogleDrive(kw){
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         model:"claude-sonnet-4-20250514",
-        max_tokens:2000,
-        system:`You are a Google Drive search assistant. Search for diary HTML files containing the keyword. 
-Return ONLY a JSON array like: [{"id":1234,"date":"2026-04-24","time":"14:30","mood":"😊","weather":"☀️","tags":["#일상"],"preview":"미리보기 텍스트","fn":"일기_2026-04-24_1430.html","html":"<full html content>","font":"'Nanum Pen Script',cursive"}]
-If nothing found return []. No other text.`,
-        messages:[{role:"user",content:`Search Google Drive for diary files (HTML files starting with "일기_") containing the keyword: "${kw}". Return matching entries as JSON.`}],
+        max_tokens:4000,
+        system:`You are a Google Drive file search assistant.
+TASK: Search inside the "journey" folder in Google Drive for HTML diary files whose content or filename contains the keyword.
+Steps:
+1. Find the folder named "journey" using search_files
+2. List HTML files inside that folder (files with mimeType text/html or filename starting with 일기_)
+3. Read each file's content using read_file_content
+4. Filter files containing the keyword: "${kw}" in content or tags
+5. Return ONLY a JSON array. Each item: {"driveFileId":"<real google drive file id>","date":"2026-04-24","time":"14:30","mood":"😊","weather":"☀️","tags":["#일상"],"preview":"first 60 chars of body text","fn":"일기_2026-04-24_1430.html","html":"<complete html file content>","font":""}
+If nothing found return []. No markdown, no explanation, just the JSON array.`,
+        messages:[{role:"user",content:`Search the "journey" folder in Google Drive for diary HTML files containing: "${kw}"`}],
         mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"google-drive"}]
       })
     });
@@ -800,17 +855,47 @@ If nothing found return []. No other text.`,
       const clean=text.replace(/```json|```/g,'').trim();
       const arr=JSON.parse(clean);
       if(Array.isArray(arr)){
-        driveResults=arr.map((e,i)=>({...e,id:e.id||Date.now()+i,fromDrive:true}));
+        driveResults=arr.map((e,i)=>({...e,id:'drive_'+(e.driveFileId||Date.now()+i),fromDrive:true}));
       }
     }catch(pe){driveResults=[];}
     const n=driveResults.length;
     document.getElementById('gdrive-search-status').textContent='';
-    document.getElementById('info-drive').textContent=n?`☁️ 드라이브 ${n}개`:'☁️ 드라이브 없음';
+    document.getElementById('info-drive').textContent=n?`☁️ journey폴더 ${n}개`:'☁️ journey 없음';
   }catch(err){
     document.getElementById('gdrive-search-status').textContent='';
     document.getElementById('info-drive').textContent='☁️ 드라이브 연결 안됨';
   }
   renderList();
+}
+
+// ── GOOGLE DRIVE SAVE (수정된 드라이브 파일 업데이트) ──
+async function saveToDrive(entry, htmlContent){
+  toast('☁️ 드라이브에 저장 중...');
+  try{
+    const response=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",
+        max_tokens:1000,
+        system:`You are a Google Drive file update assistant.
+Update an existing file in Google Drive using its file ID.
+The file is in the "journey" folder.
+Use the create_file or update tool to overwrite the file content.
+Respond with JSON: {"success":true} or {"success":false,"error":"reason"}`,
+        messages:[{role:"user",content:`Update Google Drive file with ID "${entry.driveFileId}" in the "journey" folder. New filename: "${entry.fn}". New content is the HTML diary file. Content:\n\n${htmlContent}`}],
+        mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"google-drive"}]
+      })
+    });
+    const data=await response.json();
+    const text=data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'';
+    let ok=false;
+    try{const j=JSON.parse(text.replace(/```json|```/g,'').trim());ok=j.success;}catch(e){ok=text.includes('success');}
+    if(ok)toast('☁️ 드라이브 저장 완료!');
+    else toast('⚠️ 드라이브 저장 실패 — 로컬 다운로드로 대신 저장했어요');
+  }catch(err){
+    toast('⚠️ 드라이브 저장 실패 — 다운로드로 저장했어요');
+  }
 }
 
 // ── SEARCH ──
