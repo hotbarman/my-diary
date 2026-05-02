@@ -241,6 +241,25 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
 .dm-btn.today{background:var(--bg);color:var(--accent);border:1.5px solid var(--accent);font-size:12px;}
 .date-badge.custom-date{background:#fff3e6;border-color:var(--accent);color:var(--accent);font-weight:500;}
 
+
+/* ── GIST SYNC MODAL ── */
+#sync-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;display:none;align-items:center;justify-content:center;}
+#sync-modal-overlay.show{display:flex;}
+.sync-modal{background:var(--paper);border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,0.2);padding:24px 22px 20px;width:90%;max-width:340px;display:flex;flex-direction:column;gap:14px;}
+.sync-modal-title{font-family:var(--font-hand);font-size:22px;color:var(--accent);text-align:center;}
+.sync-field label{font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:5px;}
+.sync-field input{width:100%;height:44px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font-size:14px;font-family:var(--font-ui);color:var(--ink);background:var(--bg);outline:none;}
+.sync-field input:focus{border-color:var(--accent);}
+.sync-btns{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.sync-btn{width:100%;padding:13px;border-radius:14px;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:var(--font-ui);display:flex;align-items:center;justify-content:center;gap:8px;}
+.sync-btn.upload{background:var(--accent);color:#fff;}
+.sync-btn.upload:active{background:#a8662e;}
+.sync-btn.download{background:#0f6e56;color:#fff;}
+.sync-btn.download:active{background:#0a5040;}
+.sync-btn.cancel{background:var(--bg);color:var(--muted);border:1.5px solid var(--line);}
+.sync-status{font-size:12px;color:var(--muted);text-align:center;min-height:18px;}
+.sync-info{font-size:11px;color:var(--muted);line-height:1.6;background:var(--bg);padding:10px 12px;border-radius:10px;}
+
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(44,36,22,0.9);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;opacity:0;transition:all 0.25s;pointer-events:none;z-index:9999;white-space:nowrap;font-family:var(--font-ui);}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
@@ -488,9 +507,38 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
     <button class="lbb-btn accent-btn" id="select-mode-btn" onclick="toggleSelectMode()">
       <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><path d="M12 6h7M12 16h7"/><rect x="3" y="13" width="7" height="7" rx="1.5"/></svg>선택/인쇄
     </button>
+    <button class="lbb-btn" id="sync-btn" onclick="openSyncModal()" style="color:#0f6e56;">
+      <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 018-8 8 8 0 016.93 4"/><path d="M18 12a8 8 0 01-8 8 8 8 0 01-6.93-4"/><path d="M20 4l-2 4-4-2M2 20l2-4 4 2"/></svg><span id="sync-label">동기화</span>
+    </button>
     <button class="lbb-btn" onclick="lockApp()">
       <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="12" height="9" rx="2"/><path d="M8 10V7a3 3 0 016 0v3"/></svg>잠금
     </button>
+  </div>
+</div>
+
+<!-- ── GIST SYNC MODAL ── -->
+<div id="sync-modal-overlay" onclick="closeSyncIfBg(event)">
+  <div class="sync-modal">
+    <div class="sync-modal-title">🔄 기기 동기화</div>
+    <div class="sync-field">
+      <label>GitHub Personal Access Token</label>
+      <input type="password" id="gist-token" placeholder="ghp_xxxxxxxxxxxxxxxx" autocomplete="off">
+    </div>
+    <div class="sync-info">
+      💡 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → gist 권한으로 생성
+    </div>
+    <div class="sync-status" id="sync-status"></div>
+    <div class="sync-btns">
+      <button class="sync-btn upload" onclick="syncUpload()">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14V4M6 8l4-4 4 4"/><path d="M3 17h14"/></svg>
+        이 기기 → 클라우드 (업로드)
+      </button>
+      <button class="sync-btn download" onclick="syncDownload()">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4v10M6 10l4 4 4-4"/><path d="M3 17h14"/></svg>
+        클라우드 → 이 기기 (다운로드)
+      </button>
+      <button class="sync-btn cancel" onclick="closeSyncModal()">닫기</button>
+    </div>
   </div>
 </div>
 
@@ -881,76 +929,54 @@ function loadEntryForEdit(e, fromDrive){
   }
 }
 
-// ── GOOGLE DRIVE SEARCH (journey 폴더) ──
+// ── WORKER URL 설정 (Cloudflare Worker 배포 후 교체) ──
+const WORKER_URL = 'https://diary-drive-worker.YOUR_SUBDOMAIN.workers.dev';
+
+// ── GOOGLE DRIVE SEARCH — Worker를 통해 호출 ──
 async function searchGoogleDrive(kw){
   document.getElementById('gdrive-search-status').textContent='☁️ 드라이브 검색 중...';
   driveResults=[];
   try{
-    const response=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        model:"claude-sonnet-4-20250514",
-        max_tokens:4000,
-        system:`You are a Google Drive file search assistant.
-TASK: Search inside the "journey" folder in Google Drive for HTML diary files whose content or filename contains the keyword.
-Steps:
-1. Find the folder named "journey" using search_files
-2. List HTML files inside that folder (files with mimeType text/html or filename starting with 일기_)
-3. Read each file's content using read_file_content
-4. Filter files containing the keyword: "${kw}" in content or tags
-5. Return ONLY a JSON array. Each item: {"driveFileId":"<real google drive file id>","date":"2026-04-24","time":"14:30","mood":"😊","weather":"☀️","tags":["#일상"],"preview":"first 60 chars of body text","fn":"일기_2026-04-24_1430.html","html":"<complete html file content>","font":""}
-If nothing found return []. No markdown, no explanation, just the JSON array.`,
-        messages:[{role:"user",content:`Search the "journey" folder in Google Drive for diary HTML files containing: "${kw}"`}],
-        mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"google-drive"}]
-      })
+    const res=await fetch(WORKER_URL+'/search',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({keyword:kw})
     });
-    const data=await response.json();
-    const text=data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'';
-    try{
-      const clean=text.replace(/```json|```/g,'').trim();
-      const arr=JSON.parse(clean);
-      if(Array.isArray(arr)){
-        driveResults=arr.map((e,i)=>({...e,id:'drive_'+(e.driveFileId||Date.now()+i),fromDrive:true}));
-      }
-    }catch(pe){driveResults=[];}
+    if(!res.ok)throw new Error('Worker 응답 오류: '+res.status);
+    const data=await res.json();
+    if(data.results&&Array.isArray(data.results)){
+      driveResults=data.results.map(e=>({...e,fromDrive:true}));
+    }
     const n=driveResults.length;
     document.getElementById('gdrive-search-status').textContent='';
-    document.getElementById('info-drive').textContent=n?`☁️ journey폴더 ${n}개`:'☁️ journey 없음';
+    document.getElementById('info-drive').textContent=
+      n?`☁️ Journey ${n}개 (전체 ${data.total||'?'}개 중)`:'☁️ Journey에 없음';
   }catch(err){
     document.getElementById('gdrive-search-status').textContent='';
-    document.getElementById('info-drive').textContent='☁️ 드라이브 연결 안됨';
+    document.getElementById('info-drive').textContent='☁️ Worker 연결 안됨';
+    console.error('Drive search error:',err);
   }
   renderList();
 }
 
-// ── GOOGLE DRIVE SAVE (수정된 드라이브 파일 업데이트) ──
+// ── GOOGLE DRIVE SAVE — Worker를 통해 파일 업데이트 ──
 async function saveToDrive(entry, htmlContent){
   toast('☁️ 드라이브에 저장 중...');
   try{
-    const response=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
+    const res=await fetch(WORKER_URL+'/update',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:"claude-sonnet-4-20250514",
-        max_tokens:1000,
-        system:`You are a Google Drive file update assistant.
-Update an existing file in Google Drive using its file ID.
-The file is in the "journey" folder.
-Use the create_file or update tool to overwrite the file content.
-Respond with JSON: {"success":true} or {"success":false,"error":"reason"}`,
-        messages:[{role:"user",content:`Update Google Drive file with ID "${entry.driveFileId}" in the "journey" folder. New filename: "${entry.fn}". New content is the HTML diary file. Content:\n\n${htmlContent}`}],
-        mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"google-drive"}]
+        fileId:entry.driveFileId,
+        filename:entry.fn||`일기_${entry.date}.html`,
+        html:htmlContent
       })
     });
-    const data=await response.json();
-    const text=data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'';
-    let ok=false;
-    try{const j=JSON.parse(text.replace(/```json|```/g,'').trim());ok=j.success;}catch(e){ok=text.includes('success');}
-    if(ok)toast('☁️ 드라이브 저장 완료!');
-    else toast('⚠️ 드라이브 저장 실패 — 로컬 다운로드로 대신 저장했어요');
+    const data=await res.json();
+    if(data.success)toast('☁️ 드라이브 저장 완료!');
+    else toast('⚠️ 드라이브 저장 실패 — 로컬에 다운로드됐어요');
   }catch(err){
-    toast('⚠️ 드라이브 저장 실패 — 다운로드로 저장했어요');
+    toast('⚠️ 드라이브 연결 안됨 — 로컬에 다운로드됐어요');
   }
 }
 
@@ -1160,6 +1186,132 @@ function confirmDatePicker(){
   closeDatePicker();
   if(selectedDate)toast(`📅 ${selectedDate.date} ${selectedDate.time} 로 설정됐어요`);
   else toast('📅 오늘 날짜로 돌아왔어요');
+}
+
+
+// ════════════════════════════════════════
+//  GIST 동기화
+//  - 업로드: 이 기기 일기 → GitHub Gist 저장
+//  - 다운로드: GitHub Gist → 이 기기로 가져오기 (병합)
+// ════════════════════════════════════════
+const GIST_FILENAME = 'my-diary-data.json';
+
+function getGistToken(){
+  const t=document.getElementById('gist-token').value.trim();
+  if(!t)return localStorage.getItem('gist_token')||'';
+  return t;
+}
+function saveGistToken(t){localStorage.setItem('gist_token',t);}
+function getGistId(){return localStorage.getItem('gist_id')||'';}
+function saveGistId(id){localStorage.setItem('gist_id',id);}
+
+function openSyncModal(){
+  const token=localStorage.getItem('gist_token')||'';
+  document.getElementById('gist-token').value=token;
+  document.getElementById('sync-status').textContent=
+    getGistId()?'✅ 연동된 Gist: '+getGistId().slice(0,8)+'...':'아직 연동된 Gist가 없어요';
+  document.getElementById('sync-modal-overlay').classList.add('show');
+}
+function closeSyncModal(){document.getElementById('sync-modal-overlay').classList.remove('show');}
+function closeSyncIfBg(e){if(e.target===document.getElementById('sync-modal-overlay'))closeSyncModal();}
+
+function setSyncStatus(msg){document.getElementById('sync-status').textContent=msg;}
+
+// ── 업로드: 이 기기 → Gist ──
+async function syncUpload(){
+  const token=getGistToken();
+  if(!token){setSyncStatus('❌ 토큰을 입력해 주세요');return;}
+  saveGistToken(token);
+  setSyncStatus('⏳ 업로드 중...');
+
+  // 이미지 제외한 경량 데이터 (html 제외, 미리보기만)
+  const data=entries.map(e=>({
+    id:e.id, date:e.date, time:e.time, mood:e.mood, weather:e.weather,
+    tags:e.tags, preview:e.preview, fn:e.fn, font:e.font||'',
+    editedAt:e.editedAt||'',
+    // html은 base64 압축해서 저장
+    html:btoa(unescape(encodeURIComponent(e.html||'')))
+  }));
+  const payload=JSON.stringify({version:1, updatedAt:new Date().toISOString(), entries:data});
+
+  try{
+    const gistId=getGistId();
+    let url='https://api.github.com/gists';
+    let method='POST';
+    let body={
+      description:'내 일기장 동기화 데이터',
+      public:false,
+      files:{[GIST_FILENAME]:{content:payload}}
+    };
+
+    if(gistId){
+      url=`https://api.github.com/gists/${gistId}`;
+      method='PATCH';
+      body={files:{[GIST_FILENAME]:{content:payload}}};
+    }
+
+    const res=await fetch(url,{
+      method,
+      headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+
+    if(!res.ok){
+      const err=await res.json();
+      setSyncStatus('❌ 오류: '+(err.message||res.status));
+      return;
+    }
+    const result=await res.json();
+    saveGistId(result.id);
+    setSyncStatus(`✅ 업로드 완료! (${entries.length}개 일기)`);
+    toast(`☁️ ${entries.length}개 일기 업로드 완료!`);
+  }catch(err){
+    setSyncStatus('❌ 네트워크 오류: '+err.message);
+  }
+}
+
+// ── 다운로드: Gist → 이 기기 (병합) ──
+async function syncDownload(){
+  const token=getGistToken();
+  if(!token){setSyncStatus('❌ 토큰을 입력해 주세요');return;}
+  saveGistToken(token);
+  const gistId=getGistId();
+  if(!gistId){setSyncStatus('❌ 먼저 업로드해서 Gist를 만들어 주세요');return;}
+  setSyncStatus('⏳ 다운로드 중...');
+
+  try{
+    const res=await fetch(`https://api.github.com/gists/${gistId}`,{
+      headers:{'Authorization':`token ${token}`}
+    });
+    if(!res.ok){setSyncStatus('❌ Gist를 찾을 수 없어요: '+res.status);return;}
+    const gist=await res.json();
+    const fileContent=gist.files[GIST_FILENAME]?.content;
+    if(!fileContent){setSyncStatus('❌ 일기 데이터가 없어요');return;}
+
+    const data=JSON.parse(fileContent);
+    if(!data.entries){setSyncStatus('❌ 데이터 형식 오류');return;}
+
+    // html 복원
+    const cloudEntries=data.entries.map(e=>({
+      ...e,
+      html:e.html?decodeURIComponent(escape(atob(e.html))):''
+    }));
+
+    // 병합: id 기준으로 중복 제거, 최신 것 우선
+    const merged=[...cloudEntries];
+    entries.forEach(local=>{
+      if(!merged.find(c=>c.id===local.id))merged.push(local);
+    });
+    merged.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+
+    entries=merged;
+    saveLS();
+    renderList();
+    setSyncStatus(`✅ 다운로드 완료! 총 ${merged.length}개 일기`);
+    toast(`📥 ${merged.length}개 일기 동기화 완료!`);
+  }catch(err){
+    setSyncStatus('❌ 오류: '+err.message);
+  }
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2800);}
