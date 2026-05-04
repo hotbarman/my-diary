@@ -532,8 +532,12 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
       <label>GitHub Personal Access Token</label>
       <input type="password" id="gist-token" placeholder="ghp_xxxxxxxxxxxxxxxx" autocomplete="off">
     </div>
+    <div class="sync-field">
+      <label>Gist ID <span style="font-weight:400;color:var(--muted)">(다른 기기에서 처음 연동 시 입력)</span></label>
+      <input type="text" id="gist-id-input" placeholder="자동입력 또는 직접 입력" autocomplete="off" style="font-size:12px;">
+    </div>
     <div class="sync-info">
-      💡 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → gist 권한으로 생성
+      💡 처음 동기화한 기기에서 Gist ID를 확인 후 다른 기기에 입력하세요
     </div>
     <div class="sync-status" id="sync-status"></div>
     <div class="sync-btns">
@@ -1281,14 +1285,24 @@ function getGistToken(){
   return t;
 }
 function saveGistToken(t){localStorage.setItem('gist_token',t);}
-function getGistId(){return localStorage.getItem('gist_id')||'';}
-function saveGistId(id){localStorage.setItem('gist_id',id);}
+function getGistId(){
+  const inputVal=document.getElementById('gist-id-input')?.value.trim();
+  if(inputVal)return inputVal;
+  return localStorage.getItem('gist_id')||'';
+}
+function saveGistId(id){
+  localStorage.setItem('gist_id',id);
+  const el=document.getElementById('gist-id-input');
+  if(el)el.value=id;
+}
 
 function openSyncModal(){
   const token=localStorage.getItem('gist_token')||'';
+  const gistId=getGistId();
   document.getElementById('gist-token').value=token;
+  document.getElementById('gist-id-input').value=gistId;
   document.getElementById('sync-status').textContent=
-    getGistId()?'✅ 연동된 Gist: '+getGistId().slice(0,8)+'...':'아직 연동된 Gist가 없어요';
+    gistId?'✅ 연동된 Gist ID: '+gistId:'아직 연동된 Gist가 없어요 — 다른 기기의 Gist ID를 입력하거나 동기화하세요';
   document.getElementById('sync-modal-overlay').classList.add('show');
 }
 function closeSyncModal(){document.getElementById('sync-modal-overlay').classList.remove('show');}
