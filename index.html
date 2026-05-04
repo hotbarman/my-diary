@@ -539,11 +539,11 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
     <div class="sync-btns">
       <button class="sync-btn upload" onclick="syncUpload()">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14V4M6 8l4-4 4 4"/><path d="M3 17h14"/></svg>
-        이 기기 → 클라우드 (업로드)
+        🔄 동기화 (이 기기 ↔ 클라우드)
       </button>
       <button class="sync-btn download" onclick="syncDownload()">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4v10M6 10l4 4 4-4"/><path d="M3 17h14"/></svg>
-        클라우드 → 이 기기 (다운로드)
+        📥 클라우드에서 가져오기
       </button>
       <button class="sync-btn cancel" onclick="closeSyncModal()">닫기</button>
     </div>
@@ -1297,97 +1297,117 @@ function closeSyncIfBg(e){if(e.target===document.getElementById('sync-modal-over
 function setSyncStatus(msg){document.getElementById('sync-status').textContent=msg;}
 
 // ── 업로드: 이 기기 → Gist ──
+// ── 공통: 일기 배열을 base64로 인코딩 ──
+function encodeEntries(arr){
+  return arr.map(e=>({
+    id:e.id,date:e.date,time:e.time,mood:e.mood,weather:e.weather,
+    tags:e.tags,preview:e.preview,fn:e.fn,font:e.font||'',editedAt:e.editedAt||'',
+    html:btoa(unescape(encodeURIComponent(e.html||'')))
+  }));
+}
+// ── 공통: base64 디코딩 ──
+function decodeEntries(arr){
+  return arr.map(e=>({...e,html:e.html?decodeURIComponent(escape(atob(e.html))):'' }));
+}
+// ── 공통: id 기준 병합 (editedAt 최신 우선) ──
+function mergeEntries(local,cloud){
+  const map=new Map();
+  // 클라우드 먼저
+  cloud.forEach(e=>map.set(e.id,e));
+  // 로컬: 같은 id면 editedAt 비교해서 더 최신 것 사용
+  local.forEach(e=>{
+    const existing=map.get(e.id);
+    if(!existing){map.set(e.id,e);}
+    else{
+      const eTime=(e.editedAt||e.time||'');
+      const exTime=(existing.editedAt||existing.time||'');
+      if(eTime>exTime)map.set(e.id,e);
+    }
+  });
+  return [...map.values()].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+}
+
+// ── 공통: Gist에서 클라우드 일기 가져오기 ──
+async function fetchCloudEntries(token,gistId){
+  const res=await fetch(`https://api.github.com/gists/${gistId}`,{
+    headers:{'Authorization':`token ${token}`}
+  });
+  if(!res.ok)return null;
+  const gist=await res.json();
+  const fileContent=gist.files[GIST_FILENAME]?.content;
+  if(!fileContent)return [];
+  const data=JSON.parse(fileContent);
+  if(!data.entries)return [];
+  return decodeEntries(data.entries);
+}
+
+// ── 공통: Gist에 저장 ──
+async function saveToGist(token,gistId,mergedEntries){
+  const payload=JSON.stringify({version:1,updatedAt:new Date().toISOString(),entries:encodeEntries(mergedEntries)});
+  let url='https://api.github.com/gists';
+  let method='POST';
+  let body={description:'내 일기장 동기화 데이터',public:false,files:{[GIST_FILENAME]:{content:payload}}};
+  if(gistId){
+    url=`https://api.github.com/gists/${gistId}`;
+    method='PATCH';
+    body={files:{[GIST_FILENAME]:{content:payload}}};
+  }
+  const res=await fetch(url,{method,headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok){const err=await res.json();throw new Error(err.message||res.status);}
+  const result=await res.json();
+  return result.id;
+}
+
 async function syncUpload(){
   const token=getGistToken();
   if(!token){setSyncStatus('❌ 토큰을 입력해 주세요');return;}
   saveGistToken(token);
-  setSyncStatus('⏳ 업로드 중...');
-
-  // 이미지 제외한 경량 데이터 (html 제외, 미리보기만)
-  const data=entries.map(e=>({
-    id:e.id, date:e.date, time:e.time, mood:e.mood, weather:e.weather,
-    tags:e.tags, preview:e.preview, fn:e.fn, font:e.font||'',
-    editedAt:e.editedAt||'',
-    // html은 base64 압축해서 저장
-    html:btoa(unescape(encodeURIComponent(e.html||'')))
-  }));
-  const payload=JSON.stringify({version:1, updatedAt:new Date().toISOString(), entries:data});
+  setSyncStatus('⏳ 클라우드 확인 중...');
 
   try{
     const gistId=getGistId();
-    let url='https://api.github.com/gists';
-    let method='POST';
-    let body={
-      description:'내 일기장 동기화 데이터',
-      public:false,
-      files:{[GIST_FILENAME]:{content:payload}}
-    };
-
+    // 1. 기존 클라우드 일기 가져오기
+    let cloudEntries=[];
     if(gistId){
-      url=`https://api.github.com/gists/${gistId}`;
-      method='PATCH';
-      body={files:{[GIST_FILENAME]:{content:payload}}};
+      cloudEntries=await fetchCloudEntries(token,gistId)||[];
     }
-
-    const res=await fetch(url,{
-      method,
-      headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},
-      body:JSON.stringify(body)
-    });
-
-    if(!res.ok){
-      const err=await res.json();
-      setSyncStatus('❌ 오류: '+(err.message||res.status));
-      return;
-    }
-    const result=await res.json();
-    saveGistId(result.id);
-    setSyncStatus(`✅ 업로드 완료! (${entries.length}개 일기)`);
-    toast(`☁️ ${entries.length}개 일기 업로드 완료!`);
+    // 2. 로컬 + 클라우드 병합
+    const merged=mergeEntries(entries,cloudEntries);
+    setSyncStatus(`⏳ 병합 중... (로컬 ${entries.length}개 + 클라우드 ${cloudEntries.length}개)`);
+    // 3. 병합 결과 Gist에 저장
+    const newGistId=await saveToGist(token,gistId,merged);
+    saveGistId(newGistId);
+    // 4. 로컬도 병합 결과로 업데이트
+    entries=merged;
+    saveLS();
+    renderList();
+    setSyncStatus(`✅ 동기화 완료! 총 ${merged.length}개 일기`);
+    toast(`☁️ 동기화 완료! 총 ${merged.length}개`);
   }catch(err){
-    setSyncStatus('❌ 네트워크 오류: '+err.message);
+    setSyncStatus('❌ 오류: '+err.message);
   }
 }
 
-// ── 다운로드: Gist → 이 기기 (병합) ──
+// ── 다운로드: Gist ↔ 이 기기 양방향 병합 ──
 async function syncDownload(){
   const token=getGistToken();
   if(!token){setSyncStatus('❌ 토큰을 입력해 주세요');return;}
   saveGistToken(token);
   const gistId=getGistId();
   if(!gistId){setSyncStatus('❌ 먼저 업로드해서 Gist를 만들어 주세요');return;}
-  setSyncStatus('⏳ 다운로드 중...');
-
+  setSyncStatus('⏳ 클라우드에서 가져오는 중...');
   try{
-    const res=await fetch(`https://api.github.com/gists/${gistId}`,{
-      headers:{'Authorization':`token ${token}`}
-    });
-    if(!res.ok){setSyncStatus('❌ Gist를 찾을 수 없어요: '+res.status);return;}
-    const gist=await res.json();
-    const fileContent=gist.files[GIST_FILENAME]?.content;
-    if(!fileContent){setSyncStatus('❌ 일기 데이터가 없어요');return;}
-
-    const data=JSON.parse(fileContent);
-    if(!data.entries){setSyncStatus('❌ 데이터 형식 오류');return;}
-
-    // html 복원
-    const cloudEntries=data.entries.map(e=>({
-      ...e,
-      html:e.html?decodeURIComponent(escape(atob(e.html))):''
-    }));
-
-    // 병합: id 기준으로 중복 제거, 최신 것 우선
-    const merged=[...cloudEntries];
-    entries.forEach(local=>{
-      if(!merged.find(c=>c.id===local.id))merged.push(local);
-    });
-    merged.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-
+    const cloudEntries=await fetchCloudEntries(token,gistId);
+    if(cloudEntries===null){setSyncStatus('❌ Gist를 찾을 수 없어요');return;}
+    // 병합
+    const merged=mergeEntries(entries,cloudEntries);
+    // 병합 결과 다시 클라우드에 저장 (양방향)
+    await saveToGist(token,gistId,merged);
     entries=merged;
     saveLS();
     renderList();
-    setSyncStatus(`✅ 다운로드 완료! 총 ${merged.length}개 일기`);
-    toast(`📥 ${merged.length}개 일기 동기화 완료!`);
+    setSyncStatus(`✅ 동기화 완료! 총 ${merged.length}개 일기`);
+    toast(`📥 동기화 완료! 총 ${merged.length}개`);
   }catch(err){
     setSyncStatus('❌ 오류: '+err.message);
   }
@@ -1414,17 +1434,8 @@ function confirmDelete(id){
 
 async function autoSyncAfterDelete(token,gistId){
   try{
-    const data=entries.map(e=>({
-      id:e.id,date:e.date,time:e.time,mood:e.mood,weather:e.weather,
-      tags:e.tags,preview:e.preview,fn:e.fn,font:e.font||'',editedAt:e.editedAt||'',
-      html:btoa(unescape(encodeURIComponent(e.html||'')))
-    }));
-    const payload=JSON.stringify({version:1,updatedAt:new Date().toISOString(),entries:data});
-    await fetch(`https://api.github.com/gists/${gistId}`,{
-      method:'PATCH',
-      headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},
-      body:JSON.stringify({files:{[GIST_FILENAME]:{content:payload}}})
-    });
+    // 삭제 후 현재 로컬 일기를 클라우드에 저장
+    await saveToGist(token,gistId,entries);
     toast('🗑 삭제 + ☁️ 클라우드 반영 완료!');
   }catch(err){
     console.error('Auto sync after delete failed:',err);
