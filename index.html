@@ -1134,14 +1134,11 @@ function printEntries(ids,srcOverride){
   const css=`
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&family=Nanum+Gothic&family=Nanum+Myeongjo&family=Gowun+Dodum&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;}
-    html{background:#fff;}
-    body{
-      background:#fff;color:#2c2416;
-      margin:0;
-      padding:20mm 25mm 20mm 25mm;
-      width:100%;
+    html,body{background:#fff;color:#2c2416;margin:0;padding:0;width:100%;}
+    @page{size:A4;margin:15mm 20mm 15mm 20mm;}
+    .wrapper{
+      padding:10mm 15mm;
     }
-    @page{size:A4;margin:0;}
 
     /* 표지 */
     .cover{
@@ -1294,7 +1291,7 @@ function printEntries(ids,srcOverride){
 
   const win=window.open('','_blank','width=900,height=1100');
   if(!win){toast('팝업 차단됐어요. 팝업 허용 후 다시 시도해 주세요.');return;}
-  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>내 일기장</title><style>${css}</style></head><body>${body}</body></html>`);
+  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>내 일기장</title><style>${css}</style></head><body><div class="wrapper">${body}</div></body></html>`);
   win.document.close();
   setTimeout(()=>{win.focus();win.print();},1400);
   toast(`🖨 ${selected.length}개 일기 인쇄 창 열렸어요!`);
