@@ -1118,118 +1118,114 @@ function printEntries(ids,srcOverride){
   if(!selected.length){toast('인쇄할 항목이 없어요');return;}
 
   const d=new Date();
-  const printCSS=`
+  const dayNames=['일','월','화','수','목','금','토'];
+
+  function formatDate(dateStr,timeStr){
+    const p=dateStr.split('-');
+    if(p.length!==3)return{full:dateStr,day:'',time:timeStr||''};
+    const dt=new Date(+p[0],+p[1]-1,+p[2]);
+    return{
+      full:`${+p[0]}년 ${+p[1]}월 ${+p[2]}일`,
+      day:`(${dayNames[dt.getDay()]})`,
+      time:timeStr||''
+    };
+  }
+
+  const css=`
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&family=Nanum+Gothic&family=Nanum+Myeongjo&family=Gowun+Dodum&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;}
-    @page{
-      margin:25mm 20mm;
-      size:A4;
-    }
-    body{
-      background:#fff;
-      color:#2c2416;
-      -webkit-print-color-adjust:exact;
-      print-color-adjust:exact;
-    }
+    html,body{width:100%;background:#fff;color:#2c2416;}
+    @page{size:A4;margin:22mm 24mm;}
 
-    /* ── 표지 ── */
+    /* 표지 */
     .cover{
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      min-height:240mm;
+      width:100%;min-height:230mm;
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
       text-align:center;
       page-break-after:always;
-      border-bottom:none;
     }
-    .cover-icon{font-size:64px;margin-bottom:20px;}
+    .cover-emoji{font-size:60px;margin-bottom:18px;line-height:1;}
     .cover-title{
       font-family:'Nanum Pen Script',serif;
-      font-size:56px;
-      color:#c97c3a;
-      margin-bottom:24px;
-      line-height:1.2;
+      font-size:60px;color:#c97c3a;
+      margin-bottom:16px;line-height:1.2;
     }
-    .cover-date{
-      font-family:'Noto Sans KR',sans-serif;
-      font-size:16px;
-      color:#8a7a65;
-      margin-bottom:8px;
+    .cover-divider{
+      width:50px;height:3px;
+      background:#c97c3a;border-radius:2px;
+      margin:12px auto 20px;
     }
-    .cover-count{
+    .cover-sub{
       font-family:'Noto Sans KR',sans-serif;
-      font-size:15px;
-      color:#c97c3a;
+      font-size:15px;color:#8a7a65;
+      margin-bottom:10px;
+    }
+    .cover-badge{
+      display:inline-block;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:14px;color:#c97c3a;
       background:#fff8f0;
-      padding:8px 24px;
-      border-radius:20px;
-      border:1px solid #f0d0a0;
-      margin-top:12px;
-    }
-    .cover-line{
-      width:60px;height:3px;
-      background:#c97c3a;
-      border-radius:2px;
-      margin:20px auto;
+      padding:8px 28px;
+      border-radius:30px;
+      border:1.5px solid #f0d0a0;
+      margin-top:8px;
     }
 
-    /* ── 일기 한 편 ── */
+    /* 일기 한 편 — 반드시 새 페이지 */
     .entry{
       page-break-before:always;
       page-break-inside:avoid;
-      padding:0;
+      width:100%;
     }
 
-    /* ── 날짜 헤더 ── */
+    /* 날짜 헤더 */
     .entry-header{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      margin-bottom:20px;
-      padding-bottom:14px;
-      border-bottom:2px solid #e8e0d0;
-    }
-    .entry-date-box{
-      background:#c97c3a;
-      color:#fff;
+      display:flex;align-items:center;
+      gap:12px;flex-wrap:wrap;
+      margin-bottom:22px;
+      padding:14px 16px;
+      background:#fff8f0;
       border-radius:10px;
-      padding:8px 16px;
-      font-family:'Noto Sans KR',sans-serif;
-      font-size:13px;
-      font-weight:500;
-      line-height:1.4;
-      text-align:center;
+      border-left:5px solid #c97c3a;
     }
-    .entry-date-box .day{font-size:11px;opacity:0.85;}
-    .entry-mood{font-size:28px;line-height:1;}
-    .entry-weather{font-size:24px;line-height:1;}
-    .entry-tags{display:flex;gap:6px;flex-wrap:wrap;}
+    .entry-datebox{
+      font-family:'Noto Sans KR',sans-serif;
+    }
+    .entry-datebox .main-date{
+      font-size:15px;font-weight:700;color:#2c2416;
+    }
+    .entry-datebox .sub-date{
+      font-size:12px;color:#8a7a65;margin-top:2px;
+    }
+    .entry-icons{font-size:22px;line-height:1;}
+    .entry-tags{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto;}
     .entry-tag{
       font-family:'Noto Sans KR',sans-serif;
-      font-size:11px;
-      padding:3px 10px;
+      font-size:11px;padding:3px 10px;
       border-radius:20px;
-      background:#f5ede0;
-      color:#8a5a20;
+      background:#f5ede0;color:#8a5a20;
       border:1px solid #e8d0b0;
     }
 
-    /* ── 일기 본문 ── */
+    /* 본문 */
     .entry-body{
-      font-size:18px;
-      line-height:2;
+      font-size:15px !important;
+      line-height:1.95;
       color:#2c2416;
       word-break:break-word;
+      padding:4px 0;
     }
-    .entry-body p{margin-bottom:4px;}
+    /* 모든 자식 폰트 크기 강제 통일 */
+    .entry-body *{font-size:15px !important;line-height:1.95 !important;}
+    .entry-body p{margin-bottom:6px;}
+    .entry-body br{line-height:1.95;}
     .entry-body img{
-      max-width:100%;
-      border-radius:8px;
-      margin:12px 0;
-      display:block;
+      max-width:100%;border-radius:8px;
+      margin:12px 0;display:block;
       box-shadow:0 2px 8px rgba(0,0,0,0.1);
     }
+    .diary-img-block{margin:10px 0;}
     .diary-img-block.al-c{text-align:center;}
     .diary-img-block.al-r{text-align:right;}
     .diary-img-block .img-resize-wrap{display:inline-block;max-width:100%;}
@@ -1238,68 +1234,65 @@ function printEntries(ids,srcOverride){
     .diary-img-block.sz-m .img-resize-wrap{max-width:65%;}
     .diary-img-block.sz-l .img-resize-wrap{max-width:100%;}
     .img-tb,.sz-btns,.al-btns,.img-resize-handle,.ec-del-btn{display:none!important;}
+
+    /* 푸터 구분선 */
+    .entry-footer{
+      margin-top:24px;
+      border-top:1px dashed #e8d8c0;
+      padding-top:8px;
+      text-align:right;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:11px;color:#c0b090;
+    }
   `;
 
-  // 날짜 파싱 헬퍼
-  const dayNames=['일','월','화','수','목','금','토'];
-  function formatDate(dateStr,timeStr){
-    const parts=dateStr.split('-');
-    if(parts.length!==3)return dateStr;
-    const dt=new Date(+parts[0],+parts[1]-1,+parts[2]);
-    return {
-      full:`${parts[0]}년 ${+parts[1]}월 ${+parts[2]}일`,
-      day:`(${dayNames[dt.getDay()]})`,
-      time:timeStr||''
-    };
-  }
-
   // 표지
-  let bodyHTML=`
-    <div class="cover">
-      <div class="cover-icon">✍</div>
-      <div class="cover-title">내 일기장</div>
-      <div class="cover-line"></div>
-      <div class="cover-date">${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 인쇄</div>
-      <div class="cover-count">총 ${selected.length}편</div>
-    </div>`;
+  let body=`
+  <div class="cover">
+    <div class="cover-emoji">✍</div>
+    <div class="cover-title">내 일기장</div>
+    <div class="cover-divider"></div>
+    <div class="cover-sub">${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 인쇄</div>
+    <div class="cover-badge">총 ${selected.length}편</div>
+  </div>`;
 
-  // 각 일기 — 날짜별로 새 페이지
-  selected.forEach(e=>{
+  selected.forEach((e,idx)=>{
     const parser=new DOMParser();
     const doc=parser.parseFromString(e.html,'text/html');
-    const m=doc.querySelector('.meta');if(m)m.remove();
-    // 불필요한 툴바 요소 제거
-    doc.querySelectorAll('.img-tb,.sz-btns,.al-btns,.img-resize-handle,.ec-del-btn').forEach(el=>el.remove());
+    // 메타, 툴바 제거
+    doc.querySelectorAll('.meta,.img-tb,.sz-btns,.al-btns,.img-resize-handle,.ec-del-btn').forEach(el=>el.remove());
 
-    const ff=e.font||"'Nanum Pen Script',serif";
     const df=formatDate(e.date,e.time);
     const tagHtml=(e.tags||[]).map(t=>`<span class="entry-tag">${t}</span>`).join('');
-    const driveBadge=e.fromDrive?`<span class="entry-tag" style="background:#e8f5e8;color:#0f6e56;border-color:#b8d8b8;">☁️ 드라이브</span>`:'';
+    const driveBadge=e.fromDrive?`<span class="entry-tag" style="background:#e8f5e8;color:#0f6e56;border-color:#b8d8b8;">☁️</span>`:'';
 
-    bodyHTML+=`
+    // 폰트: 손글씨체는 그대로, 나머지는 나눔고딕으로 통일
+    const rawFont=e.font||"'Nanum Pen Script',serif";
+    const isHandwriting=rawFont.includes('Nanum Pen Script')||rawFont.includes('Sunflower');
+    const bodyFont=isHandwriting?rawFont:"'Nanum Gothic','Noto Sans KR',sans-serif";
+
+    body+=`
     <div class="entry">
       <div class="entry-header">
-        <div class="entry-date-box">
-          <div>${df.full}</div>
-          <div class="day">${df.day} ${df.time}</div>
+        <div class="entry-datebox">
+          <div class="main-date">${df.full} ${df.day}</div>
+          <div class="sub-date">${df.time?'🕐 '+df.time:''}</div>
         </div>
-        <div class="entry-mood">${e.mood||''}</div>
-        <div class="entry-weather">${e.weather||''}</div>
+        <div class="entry-icons">${e.mood||''} ${e.weather||''}</div>
         <div class="entry-tags">${tagHtml}${driveBadge}</div>
       </div>
-      <div class="entry-body" style="font-family:${ff}">${doc.body.innerHTML.trim()}</div>
+      <div class="entry-body" style="font-family:${bodyFont}">${doc.body.innerHTML.trim()}</div>
+      <div class="entry-footer">${idx+1} / ${selected.length}</div>
     </div>`;
   });
 
-  const printWin=window.open('','_blank','width=900,height=1000');
-  if(!printWin){toast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해 주세요.');return;}
-  printWin.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>내 일기장</title><style>${printCSS}</style></head><body>${bodyHTML}</body></html>`);
-  printWin.document.close();
-  // 폰트 로딩 후 인쇄
-  setTimeout(()=>{printWin.focus();printWin.print();},1200);
-  toast(`🖨 ${selected.length}개 일기 인쇄 창이 열렸어요!`);
+  const win=window.open('','_blank','width=900,height=1100');
+  if(!win){toast('팝업 차단됐어요. 팝업 허용 후 다시 시도해 주세요.');return;}
+  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>내 일기장</title><style>${css}</style></head><body>${body}</body></html>`);
+  win.document.close();
+  setTimeout(()=>{win.focus();win.print();},1400);
+  toast(`🖨 ${selected.length}개 일기 인쇄 창 열렸어요!`);
 }
-
 // ── NAV ──
 function goList(){renderList();showScreen('screen-list');}
 function goWrite(){showScreen('screen-write');}
