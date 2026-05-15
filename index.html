@@ -1116,39 +1116,188 @@ function printEntries(ids,srcOverride){
   const src=srcOverride||entries;
   const selected=src.filter(e=>ids.includes(e.id)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!selected.length){toast('인쇄할 항목이 없어요');return;}
-  const area=document.getElementById('print-area');area.innerHTML='';
+
+  const d=new Date();
+  const printCSS=`
+    @import url('https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&family=Nanum+Gothic&family=Nanum+Myeongjo&family=Gowun+Dodum&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;}
+    @page{
+      margin:25mm 20mm;
+      size:A4;
+    }
+    body{
+      background:#fff;
+      color:#2c2416;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+
+    /* ── 표지 ── */
+    .cover{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      min-height:240mm;
+      text-align:center;
+      page-break-after:always;
+      border-bottom:none;
+    }
+    .cover-icon{font-size:64px;margin-bottom:20px;}
+    .cover-title{
+      font-family:'Nanum Pen Script',serif;
+      font-size:56px;
+      color:#c97c3a;
+      margin-bottom:24px;
+      line-height:1.2;
+    }
+    .cover-date{
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:16px;
+      color:#8a7a65;
+      margin-bottom:8px;
+    }
+    .cover-count{
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:15px;
+      color:#c97c3a;
+      background:#fff8f0;
+      padding:8px 24px;
+      border-radius:20px;
+      border:1px solid #f0d0a0;
+      margin-top:12px;
+    }
+    .cover-line{
+      width:60px;height:3px;
+      background:#c97c3a;
+      border-radius:2px;
+      margin:20px auto;
+    }
+
+    /* ── 일기 한 편 ── */
+    .entry{
+      page-break-before:always;
+      page-break-inside:avoid;
+      padding:0;
+    }
+
+    /* ── 날짜 헤더 ── */
+    .entry-header{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:20px;
+      padding-bottom:14px;
+      border-bottom:2px solid #e8e0d0;
+    }
+    .entry-date-box{
+      background:#c97c3a;
+      color:#fff;
+      border-radius:10px;
+      padding:8px 16px;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:13px;
+      font-weight:500;
+      line-height:1.4;
+      text-align:center;
+    }
+    .entry-date-box .day{font-size:11px;opacity:0.85;}
+    .entry-mood{font-size:28px;line-height:1;}
+    .entry-weather{font-size:24px;line-height:1;}
+    .entry-tags{display:flex;gap:6px;flex-wrap:wrap;}
+    .entry-tag{
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:11px;
+      padding:3px 10px;
+      border-radius:20px;
+      background:#f5ede0;
+      color:#8a5a20;
+      border:1px solid #e8d0b0;
+    }
+
+    /* ── 일기 본문 ── */
+    .entry-body{
+      font-size:18px;
+      line-height:2;
+      color:#2c2416;
+      word-break:break-word;
+    }
+    .entry-body p{margin-bottom:4px;}
+    .entry-body img{
+      max-width:100%;
+      border-radius:8px;
+      margin:12px 0;
+      display:block;
+      box-shadow:0 2px 8px rgba(0,0,0,0.1);
+    }
+    .diary-img-block.al-c{text-align:center;}
+    .diary-img-block.al-r{text-align:right;}
+    .diary-img-block .img-resize-wrap{display:inline-block;max-width:100%;}
+    .diary-img-block .img-resize-wrap img{width:100%;}
+    .diary-img-block.sz-s .img-resize-wrap{max-width:38%;}
+    .diary-img-block.sz-m .img-resize-wrap{max-width:65%;}
+    .diary-img-block.sz-l .img-resize-wrap{max-width:100%;}
+    .img-tb,.sz-btns,.al-btns,.img-resize-handle,.ec-del-btn{display:none!important;}
+  `;
+
+  // 날짜 파싱 헬퍼
+  const dayNames=['일','월','화','수','목','금','토'];
+  function formatDate(dateStr,timeStr){
+    const parts=dateStr.split('-');
+    if(parts.length!==3)return dateStr;
+    const dt=new Date(+parts[0],+parts[1]-1,+parts[2]);
+    return {
+      full:`${parts[0]}년 ${+parts[1]}월 ${+parts[2]}일`,
+      day:`(${dayNames[dt.getDay()]})`,
+      time:timeStr||''
+    };
+  }
 
   // 표지
-  const d=new Date();
-  const cover=document.createElement('div');cover.className='print-cover';
-  cover.innerHTML=`<h1>✍ 내 일기장</h1><p>${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 인쇄</p><p style="margin-top:6px;font-size:15px;color:#8a7a65;">총 ${selected.length}편</p>`;
-  area.appendChild(cover);
+  let bodyHTML=`
+    <div class="cover">
+      <div class="cover-icon">✍</div>
+      <div class="cover-title">내 일기장</div>
+      <div class="cover-line"></div>
+      <div class="cover-date">${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 인쇄</div>
+      <div class="cover-count">총 ${selected.length}편</div>
+    </div>`;
 
-  // 각 일기 — page-break-before:always 로 페이지 분리
+  // 각 일기 — 날짜별로 새 페이지
   selected.forEach(e=>{
-    const parser=new DOMParser();const doc=parser.parseFromString(e.html,'text/html');
+    const parser=new DOMParser();
+    const doc=parser.parseFromString(e.html,'text/html');
     const m=doc.querySelector('.meta');if(m)m.remove();
-    const driveBadge=e.fromDrive?`<span class="print-drive-badge">☁️ 구글 드라이브</span> `:'';
-    const entry=document.createElement('div');entry.className='print-entry';
-    entry.style.fontFamily=e.font||"'Nanum Pen Script',serif";
-    entry.innerHTML=`
-      <div class="print-meta">
-        <span>📅 ${e.date}${e.time?' '+e.time:''}</span>
-        <span>${e.mood||''} ${e.weather||''}</span>
-        ${e.tags.map(t=>`<span class="print-tag">${t}</span>`).join('')}
-        ${driveBadge}
-        ${e.editedAt?`<span style="color:#c97c3a">수정됨</span>`:''}
+    // 불필요한 툴바 요소 제거
+    doc.querySelectorAll('.img-tb,.sz-btns,.al-btns,.img-resize-handle,.ec-del-btn').forEach(el=>el.remove());
+
+    const ff=e.font||"'Nanum Pen Script',serif";
+    const df=formatDate(e.date,e.time);
+    const tagHtml=(e.tags||[]).map(t=>`<span class="entry-tag">${t}</span>`).join('');
+    const driveBadge=e.fromDrive?`<span class="entry-tag" style="background:#e8f5e8;color:#0f6e56;border-color:#b8d8b8;">☁️ 드라이브</span>`:'';
+
+    bodyHTML+=`
+    <div class="entry">
+      <div class="entry-header">
+        <div class="entry-date-box">
+          <div>${df.full}</div>
+          <div class="day">${df.day} ${df.time}</div>
+        </div>
+        <div class="entry-mood">${e.mood||''}</div>
+        <div class="entry-weather">${e.weather||''}</div>
+        <div class="entry-tags">${tagHtml}${driveBadge}</div>
       </div>
-      <div class="print-body">${doc.body.innerHTML.trim()}</div>`;
-    area.appendChild(entry);
+      <div class="entry-body" style="font-family:${ff}">${doc.body.innerHTML.trim()}</div>
+    </div>`;
   });
 
-  area.style.display='block';
-  setTimeout(()=>{
-    window.print();
-    setTimeout(()=>{area.style.display='none';area.innerHTML='';},1500);
-  },400);
-  toast(`🖨 ${selected.length}개 일기 인쇄 준비 중...`);
+  const printWin=window.open('','_blank','width=900,height=1000');
+  if(!printWin){toast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해 주세요.');return;}
+  printWin.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>내 일기장</title><style>${printCSS}</style></head><body>${bodyHTML}</body></html>`);
+  printWin.document.close();
+  // 폰트 로딩 후 인쇄
+  setTimeout(()=>{printWin.focus();printWin.print();},1200);
+  toast(`🖨 ${selected.length}개 일기 인쇄 창이 열렸어요!`);
 }
 
 // ── NAV ──
