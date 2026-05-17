@@ -507,28 +507,53 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
 <div id="sync-modal-overlay" onclick="closeSyncIfBg(event)">
   <div class="sync-modal">
     <div class="sync-modal-title">🔄 기기 동기화</div>
-    <div class="sync-field">
-      <label>GitHub Personal Access Token</label>
-      <input type="password" id="gist-token" placeholder="ghp_xxxxxxxxxxxxxxxx" autocomplete="off">
+    <div style="display:flex;gap:0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:4px;">
+      <button id="tab-gist" onclick="switchSyncTab('gist')" style="flex:1;padding:8px;font-size:12px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--font-ui);">GitHub Gist</button>
+      <button id="tab-nas" onclick="switchSyncTab('nas')" style="flex:1;padding:8px;font-size:12px;border:none;background:var(--bg);color:var(--muted);cursor:pointer;font-family:var(--font-ui);">🖥 NAS</button>
     </div>
-    <div class="sync-field">
-      <label>Gist ID <span style="font-weight:400;color:var(--muted)">(다른 기기에서 처음 연동 시 입력)</span></label>
-      <input type="text" id="gist-id-input" placeholder="자동입력 또는 직접 입력" autocomplete="off" style="font-size:12px;">
+    <!-- Gist 섹션 -->
+    <div id="gist-section">
+      <div class="sync-field">
+        <label>GitHub Personal Access Token</label>
+        <input type="password" id="gist-token" placeholder="ghp_xxxxxxxxxxxxxxxx" autocomplete="off">
+      </div>
+      <div class="sync-field">
+        <label>Gist ID <span style="font-weight:400;color:var(--muted)">(다른 기기에서 처음 연동 시 입력)</span></label>
+        <input type="text" id="gist-id-input" placeholder="자동입력 또는 직접 입력" autocomplete="off" style="font-size:12px;">
+      </div>
+      <div class="sync-info">💡 처음 동기화한 기기에서 Gist ID를 확인 후 다른 기기에 입력하세요</div>
+      <div class="sync-status" id="sync-status"></div>
+      <div class="sync-btns">
+        <button class="sync-btn upload" onclick="syncUpload()">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14V4M6 8l4-4 4 4"/><path d="M3 17h14"/></svg>
+          🔄 동기화 (이 기기 ↔ 클라우드)
+        </button>
+        <button class="sync-btn download" onclick="syncDownload()">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4v10M6 10l4 4 4-4"/><path d="M3 17h14"/></svg>
+          📥 클라우드에서 가져오기
+        </button>
+        <button class="sync-btn cancel" onclick="closeSyncModal()">닫기</button>
+      </div>
     </div>
-    <div class="sync-info">
-      💡 처음 동기화한 기기에서 Gist ID를 확인 후 다른 기기에 입력하세요
-    </div>
-    <div class="sync-status" id="sync-status"></div>
-    <div class="sync-btns">
-      <button class="sync-btn upload" onclick="syncUpload()">
-        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14V4M6 8l4-4 4 4"/><path d="M3 17h14"/></svg>
-        🔄 동기화 (이 기기 ↔ 클라우드)
-      </button>
-      <button class="sync-btn download" onclick="syncDownload()">
-        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4v10M6 10l4 4 4-4"/><path d="M3 17h14"/></svg>
-        📥 클라우드에서 가져오기
-      </button>
-      <button class="sync-btn cancel" onclick="closeSyncModal()">닫기</button>
+    <!-- NAS 섹션 -->
+    <div id="nas-section" style="display:none;">
+      <div class="sync-field">
+        <label>NAS 주소</label>
+        <input type="text" id="nas-url" placeholder="http://내IP:3456 또는 http://mydomain.com:3456" autocomplete="off" style="font-size:12px;">
+      </div>
+      <div class="sync-field">
+        <label>API 토큰</label>
+        <input type="password" id="nas-token" placeholder="my-diary-secret-2024" autocomplete="off">
+      </div>
+      <div class="sync-info">💡 QNAP NAS에 diary-server 컨테이너가 실행 중이어야 해요</div>
+      <div class="sync-status" id="nas-status"></div>
+      <div class="sync-btns">
+        <button class="sync-btn" style="background:#0f6e56;color:#fff;" onclick="nasSync()">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 018-8 8 8 0 016.93 4"/><path d="M18 12a8 8 0 01-8 8 8 8 0 01-6.93-4"/><path d="M20 4l-2 4-4-2M2 20l2-4 4 2"/></svg>
+          🖥 NAS와 동기화
+        </button>
+        <button class="sync-btn cancel" onclick="closeSyncModal()">닫기</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1357,6 +1382,139 @@ function makeCard(e,fromDrive,kw){
   return card;
 }
 
+
+// ════════════════════════════════════════
+//  NAS 동기화
+// ════════════════════════════════════════
+function getNasUrl(){return document.getElementById('nas-url')?.value.trim()||localStorage.getItem('nas_url')||'';}
+function getNasToken(){return document.getElementById('nas-token')?.value.trim()||localStorage.getItem('nas_token')||'';}
+function saveNasConfig(url,token){localStorage.setItem('nas_url',url);localStorage.setItem('nas_token',token);}
+function setNasStatus(msg){const el=document.getElementById('nas-status');if(el)el.textContent=msg;}
+
+function switchSyncTab(tab){
+  const isNas=tab==='nas';
+  document.getElementById('gist-section').style.display=isNas?'none':'block';
+  document.getElementById('nas-section').style.display=isNas?'block':'none';
+  document.getElementById('tab-gist').style.background=isNas?'var(--bg)':'var(--accent)';
+  document.getElementById('tab-gist').style.color=isNas?'var(--muted)':'#fff';
+  document.getElementById('tab-nas').style.background=isNas?'var(--accent)':'var(--bg)';
+  document.getElementById('tab-nas').style.color=isNas?'#fff':'var(--muted)';
+  localStorage.setItem('sync_tab',tab);
+}
+
+// openSyncModal에 NAS 설정도 복원
+const _origOpenSync=openSyncModal;
+function openSyncModal(){
+  _origOpenSync();
+  const nasUrl=localStorage.getItem('nas_url')||'';
+  const nasToken=localStorage.getItem('nas_token')||'';
+  const el1=document.getElementById('nas-url');
+  const el2=document.getElementById('nas-token');
+  if(el1)el1.value=nasUrl;
+  if(el2)el2.value=nasToken;
+  const savedTab=localStorage.getItem('sync_tab')||'gist';
+  switchSyncTab(savedTab);
+  if(nasUrl)setNasStatus(nasUrl?'✅ NAS: '+nasUrl:'NAS 주소를 입력해 주세요');
+}
+
+async function nasSync(){
+  const nasUrl=getNasUrl();
+  const nasToken=getNasToken();
+  if(!nasUrl){setNasStatus('❌ NAS 주소를 입력해 주세요');return;}
+  if(!nasToken){setNasStatus('❌ API 토큰을 입력해 주세요');return;}
+  saveNasConfig(nasUrl,nasToken);
+  setNasStatus('⏳ NAS 연결 중...');
+
+  const headers={'Authorization':`Bearer ${nasToken}`,'Content-Type':'application/json'};
+
+  try{
+    // 1. 연결 확인
+    const health=await fetch(`${nasUrl}/health`,{headers}).catch(()=>null);
+    if(!health||!health.ok){setNasStatus('❌ NAS 연결 실패. 주소/토큰 확인해 주세요');return;}
+    setNasStatus('⏳ 서버 연결됨. 동기화 중...');
+
+    // 2. NAS에서 기존 일기 가져오기
+    const listRes=await fetch(`${nasUrl}/entries`,{headers});
+    const listData=await listRes.json();
+    const nasEntryIds=new Set((listData.entries||[]).map(e=>String(e.id)));
+
+    // 3. 로컬에만 있는 일기 → NAS에 업로드 (사진 포함)
+    let uploaded=0;
+    for(const entry of entries){
+      const entryToSave={...entry};
+      // 사진이 base64로 포함된 경우 NAS 이미지로 변환
+      if(entry.html&&entry.html.includes('data:image')){
+        entryToSave.html=await uploadImagesToNas(entry.html,nasUrl,headers);
+      }
+      const saveRes=await fetch(`${nasUrl}/entries`,{method:'POST',headers,body:JSON.stringify(entryToSave)});
+      if(saveRes.ok)uploaded++;
+    }
+
+    // 4. NAS에 있는 일기 → 로컬에 병합
+    const fullEntries=[];
+    for(const e of (listData.entries||[])){
+      if(!entries.find(local=>String(local.id)===String(e.id))){
+        // NAS에만 있는 일기 상세 가져오기
+        const detailRes=await fetch(`${nasUrl}/entries/${e.id}`,{headers});
+        if(detailRes.ok){
+          const detail=await detailRes.json();
+          fullEntries.push(detail);
+        }
+      }
+    }
+
+    if(fullEntries.length>0){
+      entries=[...entries,...fullEntries].sort((a,b)=>(b.date+(b.time||'')).localeCompare(a.date+(a.time||'')));
+      saveLS();
+      renderList();
+    }
+
+    const total=entries.length;
+    setNasStatus(`✅ 동기화 완료! NAS에 ${uploaded}개 업로드, 총 ${total}개`);
+    toast(`🖥 NAS 동기화 완료! 총 ${total}개`);
+  }catch(err){
+    setNasStatus('❌ 오류: '+err.message);
+    console.error('NAS sync error:',err);
+  }
+}
+
+// base64 이미지를 NAS에 업로드하고 URL로 교체
+async function uploadImagesToNas(html,nasUrl,headers){
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(html,'text/html');
+  const imgs=doc.querySelectorAll('img[src^="data:image"]');
+
+  for(const img of imgs){
+    const base64=img.src;
+    const ext=base64.includes('image/png')?'png':base64.includes('image/gif')?'gif':'jpg';
+    const filename=`img_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    try{
+      const uploadRes=await fetch(`${nasUrl}/images`,{
+        method:'POST',headers,
+        body:JSON.stringify({filename,base64})
+      });
+      if(uploadRes.ok){
+        const data=await uploadRes.json();
+        img.src=`${nasUrl}${data.url}`;
+      }
+    }catch(e){console.error('Image upload failed:',e);}
+  }
+  return doc.body.innerHTML;
+}
+
+// NAS에서 일기 삭제 반영
+async function syncDeleteToNas(id){
+  const nasUrl=localStorage.getItem('nas_url');
+  const nasToken=localStorage.getItem('nas_token');
+  if(!nasUrl||!nasToken)return;
+  try{
+    await fetch(`${nasUrl}/entries/${id}`,{
+      method:'DELETE',
+      headers:{'Authorization':`Bearer ${nasToken}`}
+    });
+  }catch(e){console.error('NAS delete sync failed:',e);}
+}
+
 // ── DATE PICKER ──
 function openDatePicker(){
   const overlay=document.getElementById('date-modal-overlay');
@@ -1562,12 +1720,12 @@ function confirmDelete(id){
   saveLS();
   renderList();
   toast('🗑 삭제됐어요');
-  // 클라우드(Gist) 동기화 반영
+  // Gist 동기화
   const token=localStorage.getItem('gist_token');
   const gistId=localStorage.getItem('gist_id');
-  if(token&&gistId){
-    autoSyncAfterDelete(token,gistId);
-  }
+  if(token&&gistId)autoSyncAfterDelete(token,gistId);
+  // NAS 동기화
+  syncDeleteToNas(id);
 }
 
 async function autoSyncAfterDelete(token,gistId){
