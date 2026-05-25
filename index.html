@@ -635,10 +635,14 @@ function updateDateBadge(){
   }
 }
 function initLock(){
-  if(!hasPw()){showScreen('screen-write');return;}
-  showScreen('screen-lock');
-  document.getElementById('pin-mode').style.display='flex';
-  document.getElementById('setup-pw-wrap').classList.remove('show');
+  try{
+    if(!hasPw()){showScreen('screen-write');return;}
+    showScreen('screen-lock');
+    document.getElementById('pin-mode').style.display='flex';
+    document.getElementById('setup-pw-wrap').classList.remove('show');
+  }catch(err){
+    showScreen('screen-write');
+  }
 }
 initLock();
 
@@ -1355,7 +1359,7 @@ function makeCard(e,fromDrive,kw){
       <span class="ec-meta">${e.mood||''} ${e.weather||''}</span>
       ${delBtn}
     </div>
-    <div class="ec-preview" style="font-family:${e.font||"'Nanum Gothic',sans-serif'}">${previewHtml}...</div>
+    <div class="ec-preview" style="font-family:${e.font||"'Nanum Gothic',sans-serif"}">${previewHtml}...</div>
     ${e.tags.length?`<div class="ec-tags">${tagHtml}</div>`:''}`;
 
   card.addEventListener('click',ev=>{
