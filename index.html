@@ -314,6 +314,7 @@ body{font-family:var(--font-ui);display:flex;flex-direction:column;height:100dvh
             <span class="lock-link" onclick="showChangePw()">비밀번호 변경</span>
             <span class="lock-link" onclick="skipLock()">잠금 없이 사용</span>
           </div>
+          <button onclick="emergencyEnter()" style="margin-top:8px;font-size:11px;color:#ccc;background:none;border:none;cursor:pointer;font-family:var(--font-ui);">비밀번호를 잊었나요?</button>
         </div>
 
         <div id="setup-pw-wrap">
@@ -689,6 +690,21 @@ function setupDel(){setupBuf=setupBuf.slice(0,-1);updatePinDots(setupBuf,'s');}
 function cancelSetup(){document.getElementById('setup-pw-wrap').classList.remove('show');document.getElementById('pin-mode').style.display='flex';setupBuf='';setupStep=0;setupFirst='';}
 function skipLock(){if(hasPw()){if(!confirm('비밀번호를 제거하고 잠금을 해제할까요?'))return;localStorage.removeItem('diary_pw');}showScreen('screen-write');}
 function lockApp(){showScreen('screen-lock');pinBuf='';updatePinDots('','d');document.getElementById('lock-error').textContent='';}
+
+// 키보드로도 PIN 입력 가능
+document.addEventListener('keydown',e=>{
+  if(!document.getElementById('screen-lock').classList.contains('active'))return;
+  if(e.key>='0'&&e.key<='9')pinInput(e.key);
+  else if(e.key==='Backspace')pinDel();
+});
+
+// 비상 탈출 — 비밀번호 분실 시
+function emergencyEnter(){
+  if(!confirm('비밀번호를 초기화하고 앱에 진입할까요?\n(기존 비밀번호가 삭제돼요)'))return;
+  localStorage.removeItem('diary_pw');
+  showScreen('screen-write');
+  toast('비밀번호가 초기화됐어요. 새로 설정해 주세요.');
+}
 
 // ── FONT ──
 function setFont(chip){
